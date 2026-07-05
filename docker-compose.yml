@@ -1,0 +1,156 @@
+version: '3.9'
+
+# ─── Causal Sentinel Protocol — Full Stack ────────────────────────────────────
+# Starts all services for local development and testnet integration.
+#
+# Quick start:
+#   cp .env.example .env     # Fill in API keys
+#   docker-compose up -d
+#   open http://localhost:3000
+
+services:
+
+  # ── L0 Daemon: Casper event streaming ────────────────────────────────────────
+  l0-daemon:
+    build:
+      context: ./agent-core/rust/l0_daemon
+      dockerfile: Dockerfile
+    environment:
+      CASPER_NODE: ${CASPER_NODE:-https://events.testnet.casper.network}
+      CHAIN_ID:    ${CHAIN_ID:-688689}
+      WS_BIND:     0.0.0.0:9001
+    ports:
+      - "9001:9001"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9001/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  # ── Coherence Engine: Ψ(t) five-plane computation ────────────────────────────
+  coherence-engine:
+    build:
+      context: ./agent-core/python/coherence_engine
+      dockerfile: Dockerfile
+    environment:
+      L0_WEBSOCKET:      ws://l0-daemon:9001
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      FAISS_INDEX_PATH:  /data/faiss.index
+      CASPER_REGISTRY:   ${SENTINEL_REGISTRY_HASH:-}
+    volumes:
+      - faiss_data:/data
+    depends_on:
+      l0-daemon:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # ── API: FastAPI REST + WebSocket gateway ────────────────────────────────────
+  api:
+    build:
+      context: ./api
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      PORT:                  8080
+      COHERENCE_ENGINE_URL:  http://coherence-engine:8000
+      CASPER_NODE:           ${CASPER_NODE:-https://rpc.testnet.casper.network}
+      SENTINEL_REGISTRY:     ${SENTINEL_REGISTRY_HASH:-}
+      SENTINEL_VAULT:        ${SENTINEL_VAULT_HASH:-}
+      ADMIN_SECRET:          ${ADMIN_SECRET}
+      X402_HMAC_KEY:         ${X402_HMAC_KEY}
+    depends_on:
+      - coherence-engine
+      - timescaledb
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  # ── x402 Facilitator: Per-request micropayments ───────────────────────────────
+  x402-facilitator:
+    build:
+      context: ./agent-economy/x402_facilitator
+      dockerfile: Dockerfile
+    ports:
+      - "8081:8080"
+    environment:
+      PORT:         8080
+      ADMIN_SECRET: ${ADMIN_SECRET}
+      X402_HMAC_KEY: ${X402_HMAC_KEY}
+    restart: unless-stopped
+
+  # ── MCP Server: NL → DeFi actions ────────────────────────────────────────────
+  mcp-server:
+    build:
+      context: ./agent-economy/mcp_server
+      dockerfile: Dockerfile
+    ports:
+      - "8082:8081"
+    environment:
+      PORT: 8081
+    restart: unless-stopped
+
+  # ── Federation Protocol: A2A peer discovery ───────────────────────────────────
+  federation:
+    build:
+      context: ./agent-economy/federation_protocol
+      dockerfile: Dockerfile
+    ports:
+      - "8083:8082"
+    environment:
+      PORT: 8082
+    restart: unless-stopped
+
+  # ── Frontend Dashboard: Real-time visualization ───────────────────────────────
+  dashboard:
+    build:
+      context: ./frontend/dashboard
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      VITE_API_URL: http://localhost:8080
+      VITE_WS_URL:  ws://localhost:8080
+    depends_on:
+      api:
+        condition: service_healthy
+
+  # ── ANIMA Crawler: Cross-domain intelligence ──────────────────────────────────
+  anima-crawler:
+    build:
+      context: ./agent-core/python/anima_crawler
+      dockerfile: Dockerfile
+    environment:
+      CMC_API_KEY:      ${CMC_API_KEY:-}
+      SEC_EDGAR_RATE:   10
+      TIMESCALE_URL:    postgresql://csp:${DB_PASSWORD:-csp_dev}@timescaledb:5432/akashic
+    depends_on:
+      - timescaledb
+    restart: unless-stopped
+
+  # ── TimescaleDB: Behavioral time-series storage ───────────────────────────────
+  timescaledb:
+    image: timescale/timescaledb:latest-pg15
+    environment:
+      POSTGRES_USER:     csp
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-csp_dev}
+      POSTGRES_DB:       akashic
+    volumes:
+      - timescale_data:/var/lib/postgresql/data
+      - ./scripts/init_db.sql:/docker-entrypoint-initdb.d/init.sql
+    ports:
+      - "5432:5432"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U csp -d akashic"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  timescale_data:
+  faiss_data:

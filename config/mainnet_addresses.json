@@ -1,0 +1,16 @@
+{
+  "_comment": "Casper Mainnet contract addresses — populated after mainnet launch (Phase 3)",
+  "_chain": "casper",
+  "_chain_id": "casper",
+  "_node": "https://rpc.mainnet.casper.network",
+  "_status": "NOT_DEPLOYED — Phase 3 target (Month 7-12)",
+
+  "contracts": {
+    "sentinel_registry":    { "hash": null },
+    "zk_verifier":          { "hash": null },
+    "sentinel_vault":       { "hash": null },
+    "sentinel_learner":     { "hash": null },
+    "compliance_engine":    { "hash": null },
+    "epistatic_controller": { "hash": null }
+  }
+}

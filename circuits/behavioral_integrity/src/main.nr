@@ -17,14 +17,14 @@ use dep::std;
 // Fixed-point scaling factor: 1_000_000
 global SCALE: u64 = 1_000_000;
 
-// Minimum blocks for each tier (approximate: ~30 days = 324,000 blocks at 8s/block)
+// Minimum blocks for each tier (Casper ~8s/block → 30d = 324,000 blocks)
 global D_MIN_BASIC: u64 = 108_000;      // ~10 days
 global D_MIN_BRONZE: u64 = 324_000;     // ~30 days
 global D_MIN_SILVER: u64 = 648_000;     // ~60 days
 global D_MIN_GOLD: u64 = 972_000;       // ~90 days
 global D_MIN_PLATINUM: u64 = 1_296_000; // ~120 days
 
-// Threshold constants (fixed-point)
+// Λ threshold constants (fixed-point)
 global THRESHOLD_BASIC: u64 = 100_000;      // Λ ≥ 0.1
 global THRESHOLD_BRONZE: u64 = 500_000;     // Λ ≥ 0.5
 global THRESHOLD_SILVER: u64 = 1_000_000;   // Λ ≥ 1.0
@@ -36,55 +36,55 @@ global CREDENTIAL_TTL: u64 = 972_000;
 
 fn main(
     // Private inputs
-    behavioral_history: [u64; 100],      // Last 100 coherence scores
+    behavioral_history: [u64; 100],      // Last 100 coherence scores (fixed-point)
     manipulation_scores: [u8; 100],       // 0 = clean, 1 = manipulation detected
-    lambda_trace: [u64; 100],            // Λ(t) over time
-    diversity_weights: [u64; 50],        // Validator diversity weights
-    secret_key: Field,                     // Agent's secret key
+    lambda_trace: [u64; 100],            // Λ(t) over time (fixed-point)
+    diversity_weights: [u64; 50],        // Validator diversity weights (fixed-point)
+    secret_key: Field,                    // Agent's secret key
 
     // Public inputs
     current_block: pub u64,
     registration_block: pub u64,
     target_tier: pub u8,                  // Desired tier (1-5)
     expiry_block: pub u64,                // Credential expiry
-) -> pub (Field, u8, [u8; 32]) {         // (nullifier, computed_tier, reputation_commitment)
+) -> pub (Field, u8, [u8; 32]) {        // (nullifier, computed_tier, reputation_commitment)
 
     // 1. Verify credential has not expired
     assert(current_block <= expiry_block, "Credential expired");
-    assert(expiry_block <= current_block + CREDENTIAL_TTL, "Invalid expiry");
+    assert(expiry_block <= current_block + CREDENTIAL_TTL, "Invalid expiry window");
 
     // 2. Verify minimum operating duration
     let blocks_operated = current_block - registration_block;
     let min_blocks = get_min_blocks(target_tier);
     assert(blocks_operated >= min_blocks, "Insufficient operating history");
 
-    // 3. Verify coherence threshold sustained
-    let psi_avg = compute_average(behavioral_history);
-    let threshold = get_psi_threshold(target_tier);
-    assert(psi_avg >= threshold, "Coherence below threshold");
+    // 3. Verify coherence threshold sustained (average Ψ over history)
+    let psi_avg = compute_average_u64(behavioral_history);
+    let psi_threshold = get_psi_threshold(target_tier);
+    assert(psi_avg >= psi_threshold, "Coherence average below threshold");
 
-    // 4. Verify no manipulation fingerprints (or within tolerance)
-    let manipulation_count = count_manipulations(manipulation_scores);
+    // 4. Verify no manipulation fingerprints (or within tolerance for tier)
+    let manipulation_count = count_nonzero(manipulation_scores);
     let max_manipulations = get_max_manipulations(target_tier);
-    assert(manipulation_count <= max_manipulations, "Too many manipulations");
+    assert(manipulation_count <= max_manipulations as u64, "Too many manipulations");
 
-    // 5. Verify diversity-weighted consensus
+    // 5. Verify diversity-weighted consensus score
     let diversity_score = compute_diversity_score(diversity_weights);
-    assert(diversity_score >= 500_000, "Diversity score too low"); // ≥ 0.5
+    assert(diversity_score >= 500_000, "Diversity score below minimum (0.5)");
 
-    // 6. Verify moat Λ(t) exceeds threshold
-    let current_lambda = lambda_trace[99]; // Most recent
+    // 6. Verify moat Λ(t) exceeds threshold for requested tier
+    let current_lambda = lambda_trace[99]; // Most recent entry
     let lambda_threshold = get_lambda_threshold(target_tier);
-    assert(current_lambda >= lambda_threshold, "Moat below threshold");
+    assert(current_lambda >= lambda_threshold, "Moat score below tier threshold");
 
-    // 7. Compute nullifier (prevents double-spending)
-    let nullifier = compute_nullifier(secret_key, current_block);
+    // 7. Compute nullifier (Pedersen hash: prevents credential double-use)
+    let nullifier = std::hash::pedersen_hash([secret_key, current_block as Field]);
 
-    // 8. Compute compliance tier
-    let computed_tier = compute_tier(current_lambda, manipulation_count, blocks_operated);
-    assert(computed_tier >= target_tier, "Computed tier below target");
+    // 8. Compute actual tier from on-chain data (must match or exceed target)
+    let computed_tier = compute_tier(current_lambda, manipulation_count as u8, blocks_operated);
+    assert(computed_tier >= target_tier, "Actual tier below requested target");
 
-    // 9. Compute reputation commitment
+    // 9. Compute reputation commitment (commitment to behavioral history)
     let reputation_commitment = compute_reputation_commitment(
         behavioral_history, lambda_trace, secret_key
     );
@@ -101,11 +101,11 @@ fn get_min_blocks(tier: u8) -> u64 {
 }
 
 fn get_psi_threshold(tier: u8) -> u64 {
-    if tier == 1 { 450_000 }      // 0.45
-    else if tier == 2 { 500_000 } // 0.50
-    else if tier == 3 { 550_000 } // 0.55
-    else if tier == 4 { 600_000 } // 0.60
-    else { 650_000 }              // 0.65
+    if tier == 1 { 450_000 }      // Ψ ≥ 0.45
+    else if tier == 2 { 500_000 } // Ψ ≥ 0.50
+    else if tier == 3 { 550_000 } // Ψ ≥ 0.55
+    else if tier == 4 { 600_000 } // Ψ ≥ 0.60
+    else { 650_000 }              // Ψ ≥ 0.65
 }
 
 fn get_max_manipulations(tier: u8) -> u8 {
@@ -123,7 +123,7 @@ fn get_lambda_threshold(tier: u8) -> u64 {
     else { THRESHOLD_PLATINUM }
 }
 
-fn compute_average(values: [u64; 100]) -> u64 {
+fn compute_average_u64(values: [u64; 100]) -> u64 {
     let mut sum: u64 = 0;
     for i in 0..100 {
         sum += values[i];
@@ -131,10 +131,10 @@ fn compute_average(values: [u64; 100]) -> u64 {
     sum / 100
 }
 
-fn count_manipulations(scores: [u8; 100]) -> u8 {
-    let mut count: u8 = 0;
+fn count_nonzero(scores: [u8; 100]) -> u64 {
+    let mut count: u64 = 0;
     for i in 0..100 {
-        if scores[i] > 0 {
+        if scores[i] != 0 {
             count += 1;
         }
     }
@@ -142,22 +142,25 @@ fn count_manipulations(scores: [u8; 100]) -> u8 {
 }
 
 fn compute_diversity_score(weights: [u64; 50]) -> u64 {
+    // Diversity = 1 - HHI where HHI = Σ(w_i/Σw)²
+    // Using fixed-point: diversity_score ∈ [0, SCALE]
     let mut sum: u64 = 0;
     let mut sum_sq: u64 = 0;
 
     for i in 0..50 {
         sum += weights[i];
-        sum_sq += weights[i] * weights[i];
     }
-
-    // HHI = sum(w_i^2) / sum(w_i)^2
-    // Diversity score = 1 - HHI (normalized)
     if sum == 0 {
-        0
-    } else {
-        let hhi = (sum_sq * SCALE) / (sum * sum);
-        if hhi >= SCALE { 0 } else { SCALE - hhi }
+        return 0;
     }
+    // Compute sum of squared normalized weights (scaled by SCALE²)
+    for i in 0..50 {
+        let w_norm = (weights[i] * SCALE) / sum;
+        sum_sq += w_norm * w_norm;
+    }
+    // HHI in [0, SCALE²], normalize to [0, SCALE]
+    let hhi = sum_sq / SCALE;
+    if hhi >= SCALE { 0 } else { SCALE - hhi }
 }
 
 fn compute_tier(lambda: u64, manipulations: u8, blocks: u64) -> u8 {
@@ -174,37 +177,56 @@ fn compute_tier(lambda: u64, manipulations: u8, blocks: u64) -> u8 {
     }
 }
 
-fn compute_nullifier(secret: Field, block: u64) -> Field {
-    let block_field = block as Field;
-    std::hash::pedersen_hash([secret, block_field])
-}
-
 fn compute_reputation_commitment(
     history: [u64; 100],
-    lambda: [u64; 100],
+    lambda_trace: [u64; 100],
     secret: Field,
 ) -> [u8; 32] {
-    // Simplified: hash of concatenated data
-    let mut hash_input: [Field; 201] = [0; 201];
-    hash_input[0] = secret;
-
+    // Hash: secret || history[0..99] || lambda_trace[0..99]
+    // Reduced to 3 fields (Pedersen input limit) via chaining
+    let mut acc: Field = secret;
     for i in 0..100 {
-        hash_input[i + 1] = history[i] as Field;
-        hash_input[i + 101] = lambda[i] as Field;
+        acc = std::hash::pedersen_hash([acc, history[i] as Field, lambda_trace[i] as Field]);
     }
-
-    let hash = std::hash::pedersen_hash(hash_input);
-    field_to_bytes32(hash)
+    acc.to_be_bytes::<32>()
 }
 
-fn field_to_bytes32(field: Field) -> [u8; 32] {
-    // Simplified conversion
-    let bytes = field.to_be_bytes();
-    let mut result: [u8; 32] = [0; 32];
-    for i in 0..32 {
-        if i < bytes.len() {
-            result[i] = bytes[i];
-        }
-    }
-    result
+// Test vectors
+#[test]
+fn test_basic_tier_qualification() {
+    let history: [u64; 100] = [600_000; 100]; // Ψ = 0.6, above all thresholds
+    let manip: [u8; 100] = [0; 100];           // No manipulations
+    let lambda: [u64; 100] = [200_000; 100];    // Λ = 0.2 > basic threshold
+    let div: [u64; 50] = [20_000; 50];          // Equal weights → max diversity
+    let secret = 42;
+
+    let current = 200_000;
+    let registration = 0;
+    let target_tier: u8 = 1;
+    let expiry = current + 500_000;
+
+    let (nullifier, tier, _commitment) = main(
+        history, manip, lambda, div, secret,
+        current, registration, target_tier, expiry
+    );
+
+    assert(tier >= 1, "Should qualify for at least tier 1");
+    assert(nullifier != 0, "Nullifier must be non-zero");
+}
+
+#[test]
+fn test_diversity_score_equal_weights() {
+    // Equal weights → HHI = 1/N → diversity = 1 - 1/N ≈ 0.98
+    let weights: [u64; 50] = [1_000_000; 50];
+    let score = compute_diversity_score(weights);
+    assert(score >= 500_000, "Equal weights must give high diversity");
+}
+
+#[test]
+fn test_diversity_score_single_validator() {
+    // All weight in one → HHI = 1 → diversity = 0
+    let mut weights: [u64; 50] = [0; 50];
+    weights[0] = 1_000_000;
+    let score = compute_diversity_score(weights);
+    assert(score == 0, "Single validator must give zero diversity");
 }

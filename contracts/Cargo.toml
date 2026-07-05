@@ -33,3 +33,6 @@ license = "CC0-1.0"
 [workspace.dependencies]
 odra        = { version = "1.0.0", features = ["casper"] }
 odra-casper = { version = "1.0.0" }
+casper-types = { version = "4.0" }
+serde        = { version = "1.0", features = ["derive"] }
+sha3         = { version = "0.10", default-features = false }

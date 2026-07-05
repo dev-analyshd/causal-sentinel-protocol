@@ -1,0 +1,58 @@
+{
+  "_comment": "Casper Testnet contract addresses — populated after deployment",
+  "_chain": "casper-testnet",
+  "_chain_id": "688689",
+  "_node": "https://rpc.testnet.casper.network",
+  "_deployed_at_block": null,
+  "_deployer": null,
+
+  "contracts": {
+    "sentinel_registry": {
+      "hash": null,
+      "deploy_hash": null,
+      "init_args": {
+        "min_stake_motes": "10000000000"
+      }
+    },
+    "zk_verifier": {
+      "hash": null,
+      "deploy_hash": null,
+      "init_args": {}
+    },
+    "sentinel_vault": {
+      "hash": null,
+      "deploy_hash": null,
+      "init_args": {
+        "registry_hash": null,
+        "zk_verifier_hash": null
+      }
+    },
+    "sentinel_learner": {
+      "hash": null,
+      "deploy_hash": null,
+      "init_args": {
+        "registry_hash": null
+      }
+    },
+    "compliance_engine": {
+      "hash": null,
+      "deploy_hash": null,
+      "init_args": {}
+    },
+    "epistatic_controller": {
+      "hash": null,
+      "deploy_hash": null,
+      "init_args": {
+        "vault_hash": null,
+        "learner_hash": null,
+        "compliance_hash": null
+      }
+    }
+  },
+
+  "x402": {
+    "facilitator_url": "http://localhost:8081",
+    "mcp_server_url": "http://localhost:8082",
+    "federation_url": "http://localhost:8083"
+  }
+}

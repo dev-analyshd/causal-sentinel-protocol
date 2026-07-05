@@ -246,8 +246,9 @@ impl SentinelRegistry {
 
     /// Compute credential tier based on Λ, manipulation count, and age
     fn compute_tier(&self, lambda: u64, manipulations: u8, registration_block: u64) -> u8 {
-        let age_blocks = contract_env::block_time() - registration_block;
-        let age_months = age_blocks / (30 * 24 * 60 * 60 / 1000); // Approximate
+        // block_time() returns milliseconds since epoch on Casper
+        let age_ms = contract_env::block_time().saturating_sub(registration_block);
+        let age_months = age_ms / 2_592_000_000u64; // 30d × 24h × 60m × 60s × 1000ms
 
         match (lambda, manipulations, age_months) {
             (l, 0, a) if l >= 2_000_000 && a >= 12 => 5, // Platinum
