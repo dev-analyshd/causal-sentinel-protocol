@@ -1,0 +1,32 @@
+[tool.poetry]
+name = "coherence-engine"
+version = "0.1.0"
+description = "Five-Plane Behavioral Coherence Engine for Causal Sentinel"
+authors = ["Causal Sentinel Team <team@causalsentinel.io>"]
+license = "CC0-1.0"
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.10"
+numpy = "^1.26"
+scipy = "^1.11"
+scikit-learn = "^1.3"
+faiss-cpu = "^1.7"
+torch = "^2.1"
+transformers = "^4.36"
+websockets = "^12.0"
+aiohttp = "^3.9"
+pydantic = "^2.5"
+python-dotenv = "^1.0"
+structlog = "^23.2"
+rich = "^13.7"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^7.4"
+pytest-asyncio = "^0.21"
+black = "^23.12"
+mypy = "^1.7"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"

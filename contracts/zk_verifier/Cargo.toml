@@ -1,0 +1,17 @@
+[package]
+name = "zk_verifier"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+odra = { workspace = true }
+odra-casper = { workspace = true }
+casper-types = { workspace = true }
+serde = { workspace = true }
+
+[lib]
+crate-type = ["cdylib"]
+
+[features]
+default = ["casper"]
+casper = ["odra/casper"]
