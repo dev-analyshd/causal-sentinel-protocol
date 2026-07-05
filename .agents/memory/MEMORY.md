@@ -1,0 +1,1 @@
+- [Causal Sentinel Protocol import setup](csp-import-setup.md) — Rust/Casper contracts + ZK circuits are out-of-scope for the Replit runtime; only frontend+api run here.

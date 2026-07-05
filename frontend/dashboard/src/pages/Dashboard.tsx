@@ -20,7 +20,8 @@ const agents = [
 ];
 
 export default function Dashboard() {
-  const { connected } = useWebSocket('ws://localhost:9001');
+  const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const { connected } = useWebSocket(`${wsProtocol}//${window.location.host}/ws/coherence`);
 
   return (
     <div className="space-y-6">
