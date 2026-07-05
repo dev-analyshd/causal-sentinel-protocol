@@ -1,0 +1,131 @@
+name: Build & Deploy Contracts (Casper Testnet)
+
+# ─── Why a separate workflow from ci.yml ───────────────────────────────────
+# ci.yml's "contracts-build" job is a best-effort smoke check (continue-on-error).
+# This workflow is the real build+deploy pipeline: it fails loudly on build
+# errors, uploads the compiled .wasm artifacts on every push, and only ever
+# touches Casper Testnet when a human explicitly triggers a deploy — pushing
+# a commit never spends testnet CSPR or redeploys contracts by itself.
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - "contracts/**"
+      - ".github/workflows/deploy-contracts.yml"
+  pull_request:
+    branches: [ main ]
+    paths:
+      - "contracts/**"
+  workflow_dispatch:
+    inputs:
+      deploy:
+        description: "Deploy the freshly built .wasm files to Casper Testnet"
+        type: boolean
+        default: false
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # ─── Build all 6 Odra contracts to wasm32-unknown-unknown ──────────────────
+  build-wasm:
+    name: Build contracts (wasm32-unknown-unknown)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust stable + wasm32 target
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Cache cargo registry & build
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            contracts/target
+          key: ${{ runner.os }}-contracts-${{ hashFiles('contracts/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-contracts-
+
+      - name: Build all contracts (release, wasm32-unknown-unknown)
+        working-directory: contracts
+        run: cargo build --release --target wasm32-unknown-unknown --workspace
+
+      - name: List built artifacts
+        run: ls -lh contracts/target/wasm32-unknown-unknown/release/*.wasm
+
+      - name: Upload wasm artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: contract-wasm
+          path: contracts/target/wasm32-unknown-unknown/release/*.wasm
+          retention-days: 30
+
+  # ─── Deploy to Casper Testnet (manual trigger only) ────────────────────────
+  deploy-testnet:
+    name: Deploy to Casper Testnet
+    needs: build-wasm
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.deploy == 'true'
+    runs-on: ubuntu-latest
+    environment: casper-testnet
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust stable + wasm32 target
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Download wasm artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: contract-wasm
+          path: contracts/target/wasm32-unknown-unknown/release
+
+      - name: Cache cargo registry (casper-client)
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/bin
+          key: ${{ runner.os }}-casper-client-${{ hashFiles('contracts/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-casper-client-
+
+      - name: Install casper-client
+        run: |
+          if ! command -v casper-client >/dev/null 2>&1; then
+            cargo install casper-client --locked
+          fi
+
+      - name: Write deployer secret key
+        env:
+          CASPER_SECRET_KEY_PEM: ${{ secrets.CASPER_SECRET_KEY_PEM }}
+        run: |
+          if [[ -z "$CASPER_SECRET_KEY_PEM" ]]; then
+            echo "::error::Repository secret CASPER_SECRET_KEY_PEM is not set. Add it under Settings -> Secrets and variables -> Actions."
+            exit 1
+          fi
+          mkdir -p keys
+          printf '%s\n' "$CASPER_SECRET_KEY_PEM" > keys/sentinel.pem
+          chmod 600 keys/sentinel.pem
+
+      - name: Deploy all 6 contracts to testnet
+        env:
+          CASPER_NODE: ${{ vars.CASPER_NODE || 'https://rpc.testnet.casper.network' }}
+          CASPER_CHAIN: ${{ vars.CASPER_CHAIN || 'casper-testnet' }}
+          CASPER_KEY: keys/sentinel.pem
+        run: bash scripts/deploy_testnet.sh
+
+      - name: Clean up secret key from disk
+        if: always()
+        run: rm -f keys/sentinel.pem
+
+      - name: Upload deployed contract addresses
+        uses: actions/upload-artifact@v4
+        with:
+          name: testnet-addresses
+          path: config/testnet_addresses.json
+          retention-days: 90
