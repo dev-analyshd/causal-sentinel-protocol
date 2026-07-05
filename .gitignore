@@ -18,3 +18,7 @@ __pycache__/
 htmlcov/
 *.lock
 protos/
+
+# Casper keys — never commit
+keys/
+*.pem

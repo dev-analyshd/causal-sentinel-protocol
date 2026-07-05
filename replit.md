@@ -31,14 +31,25 @@ cd frontend/dashboard && npm install
 
 ## Contract Deployment (Casper Testnet)
 
-Contracts live in `contracts/` as a Cargo workspace targeting `wasm32-unknown-unknown`. Prerequisites:
-- `rustup target add wasm32-unknown-unknown`
-- Casper client CLI
-- Testnet CSPR for gas
+> ⚠️ Contract compilation (`wasm32-unknown-unknown`) and Casper testnet RPC are both unavailable in the Replit sandbox due to platform limitations. Deploy from your local machine or CI. See **`DEPLOY.md`** for the full step-by-step guide.
 
-Build: `cd contracts && cargo build --release --target wasm32-unknown-unknown`
+### Quick summary
 
-See `docs/ARCHITECTURE.md` and `README.md` for full deployment scripts.
+1. **Private key** is stored as the `CASPER_PRIVATE_KEY` Replit Secret. Write it locally with:
+   ```bash
+   bash scripts/setup_key.sh
+   ```
+2. **Build contracts** locally (needs `rustup target add wasm32-unknown-unknown` + `casper-client`):
+   ```bash
+   cd contracts && cargo build --release --target wasm32-unknown-unknown
+   ```
+3. **Deploy all 6 contracts** in dependency order:
+   ```bash
+   export CASPER_KEY=./keys/sentinel.pem
+   bash scripts/deploy_testnet.sh
+   ```
+4. Contract addresses auto-save to `config/testnet_addresses.json`.
+5. A **GitHub Actions workflow** template is in `DEPLOY.md` for CI-based deployment.
 
 ## Key Files
 
