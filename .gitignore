@@ -17,6 +17,7 @@ __pycache__/
 .coverage
 htmlcov/
 *.lock
+!contracts/Cargo.lock
 protos/
 
 # Casper keys — never commit

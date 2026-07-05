@@ -49,8 +49,8 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             contracts/target
-          key: ${{ runner.os }}-contracts-${{ hashFiles('contracts/Cargo.lock') }}
-          restore-keys: ${{ runner.os }}-contracts-
+          key: ${{ runner.os }}-contracts-nightly-${{ hashFiles('contracts/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-contracts-nightly-
 
       - name: Build all contracts (release, wasm32-unknown-unknown)
         working-directory: contracts
@@ -95,8 +95,8 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/bin
-          key: ${{ runner.os }}-casper-client-${{ hashFiles('contracts/Cargo.lock') }}
-          restore-keys: ${{ runner.os }}-casper-client-
+          key: ${{ runner.os }}-casper-client-nightly-${{ hashFiles('contracts/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-casper-client-nightly-
 
       - name: Install casper-client
         run: |

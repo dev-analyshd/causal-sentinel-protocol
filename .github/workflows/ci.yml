@@ -64,8 +64,8 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-          key: ${{ runner.os }}-contracts-${{ hashFiles('contracts/Cargo.lock') }}
-          restore-keys: ${{ runner.os }}-contracts-
+          key: ${{ runner.os }}-contracts-nightly-${{ hashFiles('contracts/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-contracts-nightly-
 
       - name: Build contracts (WASM)
         working-directory: contracts
