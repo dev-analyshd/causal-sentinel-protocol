@@ -24,3 +24,23 @@ Casper/Odra (or other wasm-target) contract work, plan for compilation to
 happen outside this sandbox (user's machine, CI, or Casper's own dev
 containers) — fix source/Cargo.toml bugs here, but don't promise a working
 `.wasm` artifact from this environment.
+
+Two further routes were tried and also confirmed blocked (2026-07-05):
+1. `nix build`/`nix eval` against the `fenix` flake (community rust-with-
+   extra-targets overlay): the flake itself fetches fine, but evaluating
+   ANY of its toolchain outputs (even a pure attribute read, no download)
+   hangs indefinitely and must be killed — some network path fenix needs
+   at eval time is blocked/unreachable in this sandbox, distinct from the
+   plain `https://static.rust-lang.org` host which IS reachable via curl.
+2. Stock nixpkgs has no `wasm32-unknown-unknown` `pkgsCross` target, and
+   `nixpkgs#rustc.targetPlatforms` (verified via fast successful `nix
+   eval`, so this is a real fact not a network artifact) lists
+   `wasm32-wasi` but never `wasm32-unknown-unknown` — the precompiled
+   nixpkgs rustc physically cannot emit the target Odra/most wasm
+   contract tooling needs, independent of any network issue.
+
+Conclusion: three structurally different routes (rustup binaries, flake
+overlay, nixpkgs cross target) fail for three different root causes. This
+is a firm platform limitation, not something worth re-attempting without a
+fundamentally new approach (e.g. a from-scratch rustc source build, which
+would take hours and is likely still infeasible in this sandbox).
