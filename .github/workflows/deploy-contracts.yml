@@ -35,8 +35,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Rust stable + wasm32 target
-        uses: dtolnay/rust-toolchain@stable
+      - name: Install Rust nightly + wasm32 target
+        # Odra macros use #![feature(box_patterns)] — nightly required.
+        # contracts/rust-toolchain.toml also pins nightly for local builds.
+        uses: dtolnay/rust-toolchain@nightly
         with:
           targets: wasm32-unknown-unknown
 
@@ -76,8 +78,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Rust stable + wasm32 target
-        uses: dtolnay/rust-toolchain@stable
+      - name: Install Rust nightly + wasm32 target
+        uses: dtolnay/rust-toolchain@nightly
         with:
           targets: wasm32-unknown-unknown
 
