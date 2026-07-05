@@ -71,6 +71,8 @@ jobs:
     if: github.event_name == 'workflow_dispatch' && github.event.inputs.deploy == 'true'
     runs-on: ubuntu-latest
     environment: casper-testnet
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
 
@@ -129,3 +131,34 @@ jobs:
           name: testnet-addresses
           path: config/testnet_addresses.json
           retention-days: 90
+
+      - name: Write deployment summary
+        if: always()
+        run: |
+          echo "## Casper Testnet Deployment" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Contract | Hash | Deploy Hash |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|---|---|---|" >> "$GITHUB_STEP_SUMMARY"
+          python3 - <<'EOF' >> "$GITHUB_STEP_SUMMARY"
+          import json
+          try:
+              cfg = json.load(open("config/testnet_addresses.json"))
+              for name, c in cfg.get("contracts", {}).items():
+                  h = c.get("hash") or "_pending_"
+                  d = c.get("deploy_hash") or "_pending_"
+                  print(f"| {name} | `{h}` | `{d}` |")
+          except Exception as e:
+              print(f"| (error reading config) | {e} | |")
+          EOF
+
+      - name: Commit updated contract addresses back to main
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          if ! git diff --quiet -- config/testnet_addresses.json; then
+            git add config/testnet_addresses.json
+            git commit -m "chore: update testnet contract addresses [skip ci]"
+            git push origin HEAD:main
+          else
+            echo "No changes to config/testnet_addresses.json — skipping commit."
+          fi
