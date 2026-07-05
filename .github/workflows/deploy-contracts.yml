@@ -37,10 +37,15 @@ jobs:
 
       - name: Install Rust nightly + wasm32 target
         # Odra macros use #![feature(box_patterns)] — nightly required.
-        # contracts/rust-toolchain.toml also pins nightly for local builds.
-        uses: dtolnay/rust-toolchain@nightly
-        with:
-          targets: wasm32-unknown-unknown
+        # Use explicit rustup commands rather than dtolnay/rust-toolchain@nightly
+        # so the toolchain selection cannot be overridden by runner defaults.
+        run: |
+          rustup toolchain install nightly --target wasm32-unknown-unknown --no-self-update
+          rustup override set nightly
+          echo "Active toolchain:"
+          rustup show active-toolchain
+          rustc --version
+          cargo --version
 
       - name: Cache cargo registry & build
         uses: actions/cache@v4
@@ -54,7 +59,8 @@ jobs:
 
       - name: Build all contracts (release, wasm32-unknown-unknown)
         working-directory: contracts
-        run: cargo build --release --target wasm32-unknown-unknown --workspace
+        # +nightly is explicit — does not rely on default toolchain or env vars
+        run: cargo +nightly build --release --target wasm32-unknown-unknown --workspace
 
       - name: List built artifacts
         run: ls -lh contracts/target/wasm32-unknown-unknown/release/*.wasm
