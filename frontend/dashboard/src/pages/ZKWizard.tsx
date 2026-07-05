@@ -1,6 +1,6 @@
-import React from 'react';
+import { useState, Fragment } from 'react';
 import { motion } from 'framer-motion';
-import { Shield, CheckCircle, Loader, FileKey, Fingerprint } from 'lucide-react';
+import { Shield, CheckCircle, Loader, Fingerprint } from 'lucide-react';
 
 type CircuitType = 'behavioral_integrity' | 'causal_identity' | 'sentinel_compliance';
 
@@ -26,10 +26,10 @@ const circuits: { id: CircuitType; name: string; constraints: number; descriptio
 ];
 
 export default function ZKWizard() {
-  const [selectedCircuit, setSelectedCircuit] = React.useState<CircuitType | null>(null);
-  const [step, setStep] = React.useState(0);
-  const [generating, setGenerating] = React.useState(false);
-  const [proof, setProof] = React.useState<string | null>(null);
+  const [selectedCircuit, setSelectedCircuit] = useState<CircuitType | null>(null);
+  const [step, setStep] = useState(0);
+  const [generating, setGenerating] = useState(false);
+  const [proof, setProof] = useState<string | null>(null);
 
   const handleGenerate = async () => {
     setGenerating(true);
@@ -50,7 +50,7 @@ export default function ZKWizard() {
       {/* Stepper */}
       <div className="flex items-center gap-4">
         {['Select Circuit', 'Configure Inputs', 'Generate Proof', 'Verify'].map((label, i) => (
-          <React.Fragment key={label}>
+          <Fragment key={label}>
             <div className={`flex items-center gap-2 ${i <= step ? 'text-white' : 'text-sentinel-500'}`}>
               <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold ${
                 i < step ? 'bg-green-500' : i === step ? 'bg-sentinel-300' : 'bg-sentinel-700'
@@ -60,7 +60,7 @@ export default function ZKWizard() {
               <span className="text-sm hidden md:block">{label}</span>
             </div>
             {i < 3 && <div className={`flex-1 h-0.5 ${i < step ? 'bg-green-500' : 'bg-sentinel-700'}`} />}
-          </React.Fragment>
+          </Fragment>
         ))}
       </div>
 

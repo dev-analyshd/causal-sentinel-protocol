@@ -1,9 +1,9 @@
-import React from 'react';
+import { useState } from 'react';
 import { Outlet, NavLink } from 'react-router-dom';
-import { Shield, Activity, Users, Zap, FileCode, Menu, X } from 'lucide-react';
+import { Shield, Activity, Users, Zap, FileCode, Menu } from 'lucide-react';
 
 export default function Layout() {
-  const [sidebarOpen, setSidebarOpen] = React.useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const navItems = [
     { to: '/', icon: Activity, label: 'Dashboard' },

@@ -1,6 +1,6 @@
-import React from 'react';
+import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { Search, Filter, ArrowUpRight, Shield, Clock, Award } from 'lucide-react';
+import { Search, ArrowUpRight, Shield, Clock } from 'lucide-react';
 
 const agents = [
   {
@@ -45,8 +45,8 @@ const agents = [
 ];
 
 export default function AgentExplorer() {
-  const [search, setSearch] = React.useState('');
-  const [filterTier, setFilterTier] = React.useState<number | null>(null);
+  const [search, setSearch] = useState('');
+  const [filterTier, setFilterTier] = useState<number | null>(null);
 
   const filtered = agents.filter(a => {
     const matchesSearch = a.id.includes(search) || a.address.includes(search);

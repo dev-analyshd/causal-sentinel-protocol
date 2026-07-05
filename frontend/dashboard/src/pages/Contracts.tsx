@@ -1,6 +1,5 @@
-import React from 'react';
 import { motion } from 'framer-motion';
-import { FileCode, CheckCircle, Activity, Shield } from 'lucide-react';
+import { FileCode, CheckCircle, Activity } from 'lucide-react';
 
 const contracts = [
   {

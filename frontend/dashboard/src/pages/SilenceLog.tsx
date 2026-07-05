@@ -1,6 +1,5 @@
-import React from 'react';
 import { motion } from 'framer-motion';
-import { AlertTriangle, Clock, Activity, Filter } from 'lucide-react';
+import { AlertTriangle, Clock, Filter } from 'lucide-react';
 
 const silenceEvents = [
   {

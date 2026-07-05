@@ -1,7 +1,7 @@
 use sha3::{Digest, Sha3_256};
 use std::collections::{HashMap, HashSet};
 use tokio::sync::RwLock;
-use tracing::{info, warn, error};
+use tracing::{info, warn};
 
 /// CRISPR Defense — Pre-execution attack interception (mempool layer)
 ///
@@ -13,18 +13,21 @@ use tracing::{info, warn, error};
 /// - Anomalous gas price spikes
 ///
 /// Intercepts attacks before they reach consensus.
+///
+/// # Nullifier lifecycle
+/// Every transaction that passes `scan()` and carries a nullifier MUST have
+/// `record_nullifier()` called in the same logical commit path.  `scan()`
+/// handles this automatically for accepted transactions so that no external
+/// caller needs to remember the extra step.
 
 pub struct CRISPRDefense {
-    /// Known attack pattern signatures
-    attack_signatures: RwLock<HashMap<String, AttackPattern>>,
-
     /// Seen nullifiers (prevent replay)
     seen_nullifiers: RwLock<HashSet<[u8; 32]>>,
 
     /// Mempool transaction cache
     mempool: RwLock<HashMap<[u8; 32], MempoolTx>>,
 
-    /// Suspicious account tracking
+    /// Suspicious account tracking: account → anomaly count
     suspicious_accounts: RwLock<HashMap<String, u32>>,
 
     /// Defense statistics
@@ -34,9 +37,7 @@ pub struct CRISPRDefense {
 #[derive(Debug, Clone)]
 pub struct AttackPattern {
     pub name: String,
-    pub signature_hash: [u8; 32],
     pub severity: AttackSeverity,
-    pub detection_rules: Vec<DetectionRule>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -45,15 +46,6 @@ pub enum AttackSeverity {
     Medium,
     High,
     Critical,
-}
-
-#[derive(Debug, Clone)]
-pub enum DetectionRule {
-    GasPriceSpike { threshold: u64 },
-    SequencePattern { pattern: Vec<String> },
-    NullifierReuse,
-    AccountAnomaly { max_tx_per_block: u32 },
-    ValueDiscrepancy { max_ratio: f64 },
 }
 
 #[derive(Debug, Clone)]
@@ -73,7 +65,6 @@ pub struct DefenseStats {
     pub total_scanned: u64,
     pub attacks_detected: u64,
     pub attacks_blocked: u64,
-    pub false_positives: u64,
 }
 
 #[derive(Debug)]
@@ -86,44 +77,7 @@ pub struct DefenseResult {
 
 impl CRISPRDefense {
     pub fn new() -> Self {
-        let mut signatures = HashMap::new();
-
-        // Initialize known attack patterns
-        signatures.insert("front_run".to_string(), AttackPattern {
-            name: "Front-Running".to_string(),
-            signature_hash: [0u8; 32],
-            severity: AttackSeverity::High,
-            detection_rules: vec![
-                DetectionRule::GasPriceSpike { threshold: 1000 },
-                DetectionRule::SequencePattern {
-                    pattern: vec!["watch".to_string(), "copy".to_string(), "execute".to_string()]
-                },
-            ],
-        });
-
-        signatures.insert("sandwich".to_string(), AttackPattern {
-            name: "Sandwich Attack".to_string(),
-            signature_hash: [0u8; 32],
-            severity: AttackSeverity::Critical,
-            detection_rules: vec![
-                DetectionRule::SequencePattern {
-                    pattern: vec!["buy".to_string(), "victim".to_string(), "sell".to_string()]
-                },
-                DetectionRule::ValueDiscrepancy { max_ratio: 0.05 },
-            ],
-        });
-
-        signatures.insert("replay".to_string(), AttackPattern {
-            name: "Replay Attack".to_string(),
-            signature_hash: [0u8; 32],
-            severity: AttackSeverity::Critical,
-            detection_rules: vec![
-                DetectionRule::NullifierReuse,
-            ],
-        });
-
         Self {
-            attack_signatures: RwLock::new(signatures),
             seen_nullifiers: RwLock::new(HashSet::new()),
             mempool: RwLock::new(HashMap::new()),
             suspicious_accounts: RwLock::new(HashMap::new()),
@@ -131,22 +85,31 @@ impl CRISPRDefense {
         }
     }
 
-    /// Scan a transaction before execution
+    /// Scan a transaction before execution.
+    ///
+    /// Accepted transactions whose nullifier is `Some(n)` have `n` automatically
+    /// added to `seen_nullifiers` in the same method — no external call needed.
     pub async fn scan(&self, tx: MempoolTx) -> DefenseResult {
-        let mut stats = self.stats.write().await;
-        stats.total_scanned += 1;
-        drop(stats);
+        {
+            let mut stats = self.stats.write().await;
+            stats.total_scanned += 1;
+        }
 
-        // 1. Check nullifier reuse
+        // ─── 1. Nullifier replay check ────────────────────────────────────
         if let Some(nullifier) = tx.nullifier {
             let seen = self.seen_nullifiers.read().await;
             if seen.contains(&nullifier) {
+                drop(seen);
                 let mut stats = self.stats.write().await;
                 stats.attacks_detected += 1;
                 stats.attacks_blocked += 1;
                 drop(stats);
 
-                warn!("replay_attack_detected tx_hash={}", hex::encode(tx.hash));
+                warn!(
+                    tx_hash = %hex::encode(tx.hash),
+                    nullifier = %hex::encode(nullifier),
+                    "replay_attack_detected"
+                );
                 return DefenseResult {
                     tx_hash: tx.hash,
                     allowed: false,
@@ -156,36 +119,42 @@ impl CRISPRDefense {
             }
         }
 
-        // 2. Check gas price anomaly
+        // ─── 2. Gas price anomaly ────────────────────────────────────────
         if self.is_gas_price_anomalous(&tx).await {
-            warn!("gas_price_anomaly tx_hash={} gas_price={}", hex::encode(tx.hash), tx.gas_price);
-
+            warn!(
+                tx_hash = %hex::encode(tx.hash),
+                gas_price = tx.gas_price,
+                "gas_price_anomaly"
+            );
             let mut suspicious = self.suspicious_accounts.write().await;
             let count = suspicious.entry(tx.from.clone()).or_insert(0);
             *count += 1;
-
             if *count >= 3 {
+                drop(suspicious);
                 let mut stats = self.stats.write().await;
                 stats.attacks_detected += 1;
+                stats.attacks_blocked += 1;
                 drop(stats);
-
                 return DefenseResult {
                     tx_hash: tx.hash,
                     allowed: false,
-                    reason: Some("Repeated gas price anomalies".to_string()),
+                    reason: Some("Repeated gas price anomalies — account flagged".to_string()),
                     severity: Some(AttackSeverity::Medium),
                 };
             }
         }
 
-        // 3. Check sequence patterns
+        // ─── 3. Sequence pattern detection ──────────────────────────────
         if let Some(pattern) = self.detect_sequence_pattern(&tx).await {
             let mut stats = self.stats.write().await;
             stats.attacks_detected += 1;
+            stats.attacks_blocked += 1;
             drop(stats);
-
-            warn!("sequence_pattern_detected tx_hash={} pattern={}", hex::encode(tx.hash), pattern);
-
+            warn!(
+                tx_hash = %hex::encode(tx.hash),
+                pattern = %pattern,
+                "sequence_pattern_detected"
+            );
             return DefenseResult {
                 tx_hash: tx.hash,
                 allowed: false,
@@ -194,11 +163,16 @@ impl CRISPRDefense {
             };
         }
 
-        // 4. Store in mempool cache
+        // ─── 4. Accept: record nullifier (same path, cannot be skipped) ──
         let tx_hash = tx.hash;
+        if let Some(nullifier) = tx.nullifier {
+            let mut seen = self.seen_nullifiers.write().await;
+            seen.insert(nullifier);
+            info!(nullifier = %hex::encode(nullifier), "nullifier_recorded");
+        }
+
         let mut mempool = self.mempool.write().await;
-        mempool.insert(tx.hash, tx);
-        drop(mempool);
+        mempool.insert(tx_hash, tx);
 
         DefenseResult {
             tx_hash,
@@ -208,27 +182,27 @@ impl CRISPRDefense {
         }
     }
 
-    /// Record nullifier as spent
+    /// Manually record a nullifier (e.g. after on-chain confirmation).
+    /// `scan()` already calls this for every accepted tx, so external callers
+    /// only need this when processing confirmed chain events directly.
     pub async fn record_nullifier(&self, nullifier: [u8; 32]) {
         let mut seen = self.seen_nullifiers.write().await;
         seen.insert(nullifier);
-        info!("nullifier_recorded nullifier={}", hex::encode(nullifier));
+        info!(nullifier = %hex::encode(nullifier), "nullifier_recorded_externally");
     }
 
-    /// Get defense statistics
     pub async fn get_stats(&self) -> DefenseStats {
         self.stats.read().await.clone()
     }
 
     async fn is_gas_price_anomalous(&self, tx: &MempoolTx) -> bool {
-        // In production: compare against rolling average
-        // Mock: flag if gas price > 1000
+        // Production: compare against rolling 10-block average + 3σ
+        // MVP: flag if gas_price > hard ceiling
         tx.gas_price > 1000
     }
 
     async fn detect_sequence_pattern(&self, _tx: &MempoolTx) -> Option<String> {
-        // In production: analyze mempool sequences
-        // Mock: no patterns detected
+        // Production: analyse surrounding mempool for sandwich/front-run windows
         None
     }
 }
@@ -254,11 +228,8 @@ mod tests {
     async fn test_replay_attack_detection() {
         let defense = CRISPRDefense::new();
         let nullifier = [1u8; 32];
-
-        // Record nullifier
         defense.record_nullifier(nullifier).await;
 
-        // Try to use it again
         let tx = MempoolTx {
             hash: [2u8; 32],
             from: "attacker".to_string(),
@@ -269,10 +240,44 @@ mod tests {
             timestamp: 12345,
             nullifier: Some(nullifier),
         };
-
         let result = defense.scan(tx).await;
         assert!(!result.allowed);
         assert_eq!(result.severity, Some(AttackSeverity::Critical));
+    }
+
+    #[tokio::test]
+    async fn test_accepted_nullifier_recorded_automatically() {
+        let defense = CRISPRDefense::new();
+        let nullifier = [5u8; 32];
+
+        // First scan: accepted, nullifier recorded inside scan()
+        let tx1 = MempoolTx {
+            hash: [10u8; 32],
+            from: "honest".to_string(),
+            to: "target".to_string(),
+            value: 100,
+            gas_price: 10,
+            nonce: 1,
+            timestamp: 1,
+            nullifier: Some(nullifier),
+        };
+        let r1 = defense.scan(tx1).await;
+        assert!(r1.allowed, "First use of nullifier should be allowed");
+
+        // Second scan of same nullifier: must be rejected (recorded by scan above)
+        let tx2 = MempoolTx {
+            hash: [11u8; 32],
+            from: "attacker".to_string(),
+            to: "target".to_string(),
+            value: 100,
+            gas_price: 10,
+            nonce: 2,
+            timestamp: 2,
+            nullifier: Some(nullifier),
+        };
+        let r2 = defense.scan(tx2).await;
+        assert!(!r2.allowed, "Replay of same nullifier must be blocked");
+        assert_eq!(r2.severity, Some(AttackSeverity::Critical));
     }
 
     #[tokio::test]
@@ -283,12 +288,11 @@ mod tests {
             from: "honest_agent".to_string(),
             to: "recipient".to_string(),
             value: 500,
-            gas_price: 10,    // Normal gas price
+            gas_price: 10,
             nonce: 1,
             timestamp: 12345,
-            nullifier: None,  // No nullifier
+            nullifier: None,
         };
-
         let result = defense.scan(tx).await;
         assert!(result.allowed);
         assert!(result.reason.is_none());
@@ -319,5 +323,6 @@ mod tests {
         defense.scan(tx).await;
         let stats = defense.get_stats().await;
         assert_eq!(stats.total_scanned, 1);
+        assert_eq!(stats.attacks_detected, 0);
     }
 }

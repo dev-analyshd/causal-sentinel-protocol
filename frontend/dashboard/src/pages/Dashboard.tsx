@@ -1,6 +1,5 @@
-import React from 'react';
 import { motion } from 'framer-motion';
-import { Activity, TrendingUp, Shield, AlertTriangle, Lock, Globe } from 'lucide-react';
+import { Activity, TrendingUp, Shield, AlertTriangle, Globe } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar } from 'recharts';
 import { useWebSocket } from '../hooks/useWebSocket';
 
@@ -21,7 +20,7 @@ const agents = [
 ];
 
 export default function Dashboard() {
-  const { connected, data } = useWebSocket('ws://localhost:9001');
+  const { connected } = useWebSocket('ws://localhost:9001');
 
   return (
     <div className="space-y-6">

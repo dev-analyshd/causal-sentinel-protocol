@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use reqwest::Client;
 use serde_json::Value;
 use tokio::sync::mpsc::Sender;
@@ -34,22 +34,17 @@ impl CasperEventStream {
                     error!("Event stream error: {}, reconnecting in 5s...", e);
                 }
             }
-
             sleep(Duration::from_secs(5)).await;
         }
     }
 
     async fn connect_and_stream(&self) -> Result<()> {
-        // Connect to Casper node's event stream API
         let url = format!("{}/events/deploys", self.node_url);
 
-        let response = self.client
-            .get(&url)
-            .send()
-            .await?;
+        let response = self.client.get(&url).send().await?;
 
         if !response.status().is_success() {
-            return Err(anyhow::anyhow!("Failed to connect: {}", response.status()));
+            return Err(anyhow!("Failed to connect: {}", response.status()));
         }
 
         let body = response.text().await?;
@@ -67,44 +62,31 @@ impl CasperEventStream {
 
         match event_type {
             "DeployAccepted" => {
-                let deploy_hash = hex::decode(
-                    event["deploy_hash"].as_str().unwrap_or("")
-                )?;
-                let mut hash = [0u8; 32];
-                hash.copy_from_slice(&deploy_hash);
-
+                let hash = parse_hash32(&event, "deploy_hash")?;
                 let casper_event = CasperEvent::DeployAccepted {
                     deploy_hash: hash,
                     account: event["account"].as_str().unwrap_or("").to_string(),
                     timestamp: event["timestamp"].as_u64().unwrap_or(0),
                 };
-
                 self.event_tx.send(casper_event).await?;
             },
             "BlockAdded" => {
-                let block_hash = hex::decode(
-                    event["block_hash"].as_str().unwrap_or("")
-                )?;
-                let mut hash = [0u8; 32];
-                hash.copy_from_slice(&block_hash);
-
+                let hash = parse_hash32(&event, "block_hash")?;
                 let casper_event = CasperEvent::BlockAdded {
                     block_hash: hash,
                     height: event["height"].as_u64().unwrap_or(0),
                     era_id: event["era_id"].as_u64().unwrap_or(0),
                     timestamp: event["timestamp"].as_u64().unwrap_or(0),
                 };
-
                 self.event_tx.send(casper_event).await?;
             },
             "Transfer" => {
                 let casper_event = CasperEvent::Transfer {
                     from: event["from"].as_str().unwrap_or("").to_string(),
-                    to: event["to"].as_str().unwrap_or("").to_string(),
+                    to:   event["to"].as_str().unwrap_or("").to_string(),
                     amount: event["amount"].as_u64().unwrap_or(0),
-                    deploy_hash: [0u8; 32], // Simplified
+                    deploy_hash: [0u8; 32],
                 };
-
                 self.event_tx.send(casper_event).await?;
             },
             _ => {
@@ -113,5 +95,65 @@ impl CasperEventStream {
         }
 
         Ok(())
+    }
+}
+
+/// Decode a hex-encoded 32-byte hash from a JSON field.
+/// Returns `Err` (logged, does not panic) if the field is missing, non-hex,
+/// or not exactly 32 bytes after decoding.
+fn parse_hash32(event: &Value, field: &str) -> Result<[u8; 32]> {
+    let hex_str = event[field]
+        .as_str()
+        .ok_or_else(|| anyhow!("field '{}' missing or not a string", field))?;
+
+    let bytes = hex::decode(hex_str)
+        .map_err(|e| anyhow!("field '{}' is not valid hex: {}", field, e))?;
+
+    if bytes.len() != 32 {
+        return Err(anyhow!(
+            "field '{}' decoded to {} bytes, expected exactly 32",
+            field, bytes.len()
+        ));
+    }
+
+    let mut out = [0u8; 32];
+    out.copy_from_slice(&bytes);  // safe: length verified above
+    Ok(out)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn test_parse_hash32_valid() {
+        let event = json!({ "deploy_hash": "a".repeat(64) });
+        let result = parse_hash32(&event, "deploy_hash");
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_parse_hash32_too_short() {
+        let event = json!({ "deploy_hash": "deadbeef" }); // 4 bytes, not 32
+        let result = parse_hash32(&event, "deploy_hash");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("expected exactly 32"));
+    }
+
+    #[test]
+    fn test_parse_hash32_invalid_hex() {
+        let event = json!({ "deploy_hash": "gggg" });
+        let result = parse_hash32(&event, "deploy_hash");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("not valid hex"));
+    }
+
+    #[test]
+    fn test_parse_hash32_missing_field() {
+        let event = json!({});
+        let result = parse_hash32(&event, "deploy_hash");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("missing"));
     }
 }
