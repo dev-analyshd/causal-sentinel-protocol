@@ -1,1 +1,2 @@
 - [Causal Sentinel Protocol import setup](csp-import-setup.md) — Rust/Casper contracts + ZK circuits are out-of-scope for the Replit runtime; only frontend+api run here.
+- [NixOS Rust wasm32 toolchain gap](nixos-rust-wasm-toolchain-gap.md) — this sandbox can't compile Rust to wasm32-unknown-unknown; rustup binaries crash with a glibc TLS error even after patchelf.

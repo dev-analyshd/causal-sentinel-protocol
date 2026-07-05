@@ -137,6 +137,9 @@ async def evaluate_coherence(req: CoherenceEvalRequest):
     """
     agent_id = req.agent_id
     state = AGENTS.setdefault(agent_id, {"lambda": 0.0, "tier": 1, "psi_history": []})
+    state.setdefault("lambda", 0.0)
+    state.setdefault("tier", 1)
+    state.setdefault("psi_history", [])
 
     psi, planes = compute_psi(agent_id)
     lambda_t = state.get("lambda", 0.0)

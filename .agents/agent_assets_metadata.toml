@@ -1,0 +1,8 @@
+uploads = []
+generated = []
+
+[[outputs]]
+id = "hgBhC7Wyez7XYASqimpoH"
+uri = "file://TEST_REPORT.md"
+type = "text"
+title = "CSP Test & Assessment Report"
