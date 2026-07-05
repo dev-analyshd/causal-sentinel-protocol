@@ -3,9 +3,12 @@
 ## Prerequisites (local machine or CI — not needed on Replit)
 
 ```bash
-# 1. Rust + wasm32 target
+# 1. Rust nightly + wasm32 target
+# Odra macros require nightly (uses #![feature(box_patterns)])
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-rustup target add wasm32-unknown-unknown
+rustup toolchain install nightly
+rustup target add wasm32-unknown-unknown --toolchain nightly
+# contracts/rust-toolchain.toml pins nightly automatically when you cd into contracts/
 
 # 2. Casper client
 cargo install casper-client
@@ -116,9 +119,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@nightly
         with:
           targets: wasm32-unknown-unknown
+          # Odra macros require nightly (box_patterns feature)
       - name: Install casper-client
         run: cargo install casper-client
       - name: Write key
